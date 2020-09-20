@@ -16,6 +16,7 @@ import (
 
 	"adsb-loki/pkg/adsbloki"
 	"adsb-loki/pkg/cfg"
+	"adsb-loki/pkg/registration"
 )
 
 type Config struct {
@@ -58,7 +59,13 @@ func main() {
 	shutdown := make(chan struct{})
 	go sig(logger, shutdown)
 
-	al, err := adsbloki.NewADSBLoki(logger, &config.Config)
+	m, err := registration.NewManager(logger, config.RegManagerConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to init the registration manager: %v\n", err)
+		os.Exit(1)
+	}
+
+	al, err := adsbloki.NewADSBLoki(logger, &config.Config, m)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to init the application: %v\n", err)
 		os.Exit(1)

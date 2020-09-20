@@ -23,6 +23,9 @@ github.com/cortexproject/cortex/pkg/util/spanlogger
 github.com/cortexproject/cortex/pkg/util/tls
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
+# github.com/dimchansky/utfbom v1.1.0
+## explicit
+github.com/dimchansky/utfbom
 # github.com/dustin/go-humanize v1.0.0
 github.com/dustin/go-humanize
 # github.com/edsrzf/mmap-go v1.0.0
@@ -35,6 +38,9 @@ github.com/go-kit/kit/log
 github.com/go-kit/kit/log/level
 # github.com/go-logfmt/logfmt v0.5.0
 github.com/go-logfmt/logfmt
+# github.com/gocarina/gocsv v0.0.0-20200827134620-49f5c3fa2b3e
+## explicit
+github.com/gocarina/gocsv
 # github.com/gogo/googleapis v1.1.0
 github.com/gogo/googleapis/google/rpc
 # github.com/gogo/protobuf v1.3.1
