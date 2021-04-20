@@ -8,15 +8,16 @@ import (
 	"runtime"
 	"syscall"
 
+	"adsb-loki/pkg/aircraft"
 	"github.com/cortexproject/cortex/pkg/util/flagext"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	lokiconfig "github.com/grafana/loki/pkg/cfg"
 	"github.com/prometheus/common/version"
+
+	lokiconfig "github.com/grafana/loki/pkg/cfg"
 
 	"adsb-loki/pkg/adsbloki"
 	"adsb-loki/pkg/cfg"
-	"adsb-loki/pkg/registration"
 )
 
 type Config struct {
@@ -59,7 +60,7 @@ func main() {
 	shutdown := make(chan struct{})
 	go sig(logger, shutdown)
 
-	m, err := registration.NewManager(logger, config.RegManagerConfig)
+	m, err := aircraft.NewAircraftManager(logger, config.AircraftManagerConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to init the registration manager: %v\n", err)
 		os.Exit(1)

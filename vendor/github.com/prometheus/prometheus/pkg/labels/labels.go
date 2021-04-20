@@ -208,7 +208,7 @@ func (ls Labels) WithLabels(names ...string) Labels {
 	return ret
 }
 
-// WithLabels returns a new labels.Labels from ls that contains labels not matching names.
+// WithoutLabels returns a new labels.Labels from ls that contains labels not matching names.
 // 'names' have to be sorted in ascending order.
 func (ls Labels) WithoutLabels(names ...string) Labels {
 	ret := make([]Label, 0, len(ls))
@@ -275,6 +275,7 @@ func (ls Labels) WithoutEmpty() Labels {
 		if v.Value != "" {
 			continue
 		}
+		// Do not copy the slice until it's necessary.
 		els := make(Labels, 0, len(ls)-1)
 		for _, v := range ls {
 			if v.Value != "" {

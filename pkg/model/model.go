@@ -1,6 +1,20 @@
-package dump1090
+package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
+
+type Details struct {
+	Registration *string `json:"registration,omitempty"`
+	TypeCode     *string `json:"type_code,omitempty"`
+	Military     *bool   `json:"military,omitempty"`
+	Interesting  *bool   `json:"interesting,omitempty"`
+	PIA          *bool   `json:"pia,omitempty"`
+	LADD         *bool   `json:"ladd,omitempty"`
+	Description  *string `json:"description,omitempty"`
+	Manufactured *string `json:"manufactured,omitempty"`
+	Owner        *string `json:"owner,omitempty"`
+}
 
 type Report struct {
 	Now      float64    `json:"now"`
@@ -21,16 +35,8 @@ type Aircraft struct {
 	Rssi              *float32 `json:"rssi,omitempty"`
 	GeometricAltitude *float64 `json:"alt_geom,omitempty"`
 
-	/*
-	 * This field might be a number, a string (usually "ground"), or nil
-	 */
+	// This field might be a number, a string (usually "ground"), or nil
 	BarometerAltitude json.Token `json:"alt_baro,omitempty"`
 
-	/*
-	 * These fields are NOT part of the dump1090 format, but they may
-	 * be added by external decorators
-	 */
-	Registration *string
-	Description  *string
-	AircraftType *string
+	Details
 }
