@@ -23,6 +23,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	for i := range c.ClientConfigs {
 		c.ClientConfigs[i].RegisterFlags(f)
 	}
+	f.StringVar(&c.ADSBURL, "adsb-url", "http://localhost:8080/data/aircraft.json", "Where to find the aircraft.json file")
 	c.RegManagerConfig.RegisterFlags(f)
 	c.AircraftManagerConfig.RegisterFlags(f)
 }

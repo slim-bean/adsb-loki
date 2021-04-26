@@ -8,6 +8,7 @@ require (
 	github.com/go-kit/kit v0.10.0
 	github.com/gocarina/gocsv v0.0.0-20200827134620-49f5c3fa2b3e
 	github.com/grafana/loki v1.6.2-0.20201026154740-6978ee5d7387
+	github.com/magefile/mage v1.11.0
 	github.com/prometheus/common v0.14.0
 )
 

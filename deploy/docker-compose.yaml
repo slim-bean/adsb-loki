@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  loki:
+    image: slimbean/loki:armv7-TLSHandshake-2021-04-21
+    user: "10001:10001"
+    restart: always
+    network_mode: host
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - "loki:/loki"
+      - "/home/pi/loki-config.yaml:/etc/loki/loki-config.yaml"
+
+  adsb-loki:
+    image: slimbean/adsb-loki:latest
+    restart: always
+    network_mode: host
+    volumes:
+      - "adsb-loki:/adsb-loki-data"
+      - "/home/pi/adsb-loki.yaml:/etc/adsb-loki/adsb-loki.yaml"
+
+volumes:
+  loki:
+  adsb-loki:
