@@ -4,19 +4,23 @@ import (
 	"bufio"
 	"compress/gzip"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
-	"sync"
 	"time"
+	"unsafe"
 
 	"adsb-loki/pkg/model"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gocarina/gocsv"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -29,8 +33,9 @@ var (
 )
 
 type Config struct {
-	Directory string `yaml:"directory"`
-	URL       string `yaml:"url"`
+	Directory  string `yaml:"directory"`
+	BoltDbFile string `yaml:"db_file"`
+	URL        string `yaml:"url"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -39,22 +44,28 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 		panic(err)
 	}
 	f.StringVar(&c.Directory, "aircraft-manager.directory", path, "Where to save the downloaded aircraft info, defaults to the current working directory")
+	f.StringVar(&c.BoltDbFile, "aircraft-manager.db-file", filepath.Join(path, "aircraft.db"), "Where to save the aircraft db, defaults to the current working directory ./aircraft.db")
 	f.StringVar(&c.URL, "aircraft-manager.url", "https://github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz", "Where to get aircraft information")
 }
 
 type Manager struct {
-	logger     log.Logger
-	config     Config
-	deteMap    map[string]*model.Details
-	deteMapMtx sync.Mutex
-	shutdown   chan struct{}
-	done       chan struct{}
+	logger   log.Logger
+	config   Config
+	db       *bolt.DB
+	shutdown chan struct{}
+	done     chan struct{}
 }
 
 func NewAircraftManager(logger log.Logger, config Config) (*Manager, error) {
+
+	db, err := bolt.Open(config.BoltDbFile, 0600, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error opening boltdb file: %s", err)
+	}
 	m := &Manager{
 		logger: log.With(logger, "component", "manager"),
 		config: config,
+		db:     db,
 	}
 
 	gocsv.SetCSVReader(func(in io.Reader) gocsv.CSVReader {
@@ -63,12 +74,14 @@ func NewAircraftManager(logger log.Logger, config Config) (*Manager, error) {
 		r.Comma = ';'
 		return r
 	})
+	level.Info(logger).Log("msg", "mananger initialized")
+	return m, nil
+}
 
+func (m *Manager) Run() {
 	m.checkAndUpdateRegistrationFile()
 	m.loadRegistrationInfo()
 	go m.run()
-	level.Info(logger).Log("msg", "mananger initialized")
-	return m, nil
 }
 
 func (m *Manager) run() {
@@ -93,14 +106,29 @@ func (m *Manager) run() {
 }
 
 func (m *Manager) Lookup(hex string) *model.Details {
-	m.deteMapMtx.Lock()
-	defer m.deteMapMtx.Unlock()
-	return m.deteMap[hex]
+	var d *model.Details
+	err := m.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("aircraft"))
+		v := b.Get([]byte(hex))
+		if v != nil {
+			d = &model.Details{}
+			err := json.Unmarshal(v, d)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		level.Error(m.logger).Log("msg", "failed to retrieve aircraft info from boltdb", "err", err)
+	}
+	return d
 }
 
 func (m *Manager) Stop() {
 	level.Info(m.logger).Log("msg", "stop called")
 	close(m.shutdown)
+	m.db.Close()
 	<-m.done
 	level.Info(m.logger).Log("msg", "shutdown complete")
 }
@@ -167,80 +195,162 @@ func (m *Manager) loadRegistrationInfo() {
 	}
 	defer reader.Close()
 	defer file.Close()
-	nMap := buildDetails(reader)
-	m.deteMapMtx.Lock()
-	m.deteMap = nMap
-	m.deteMapMtx.Unlock()
-	level.Info(m.logger).Log("msg", "finished updating aircraft registration details", "mapLength", len(m.deteMap))
+	jp := NewCsvParser(reader)
+	err = m.db.Update(func(tx *bolt.Tx) error {
+		_ = tx.DeleteBucket([]byte("aircraft"))
+		b, err := tx.CreateBucket([]byte("aircraft"))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		for jp.Next() {
+			h, d := jp.Details()
+			ac, err := json.Marshal(d)
+			if err != nil {
+				level.Warn(m.logger).Log("msg", "failed to marshal aircraft details into json for storage in boltdb", "err", err)
+				continue
+			}
+			err = b.Put([]byte(h), ac)
+			if err != nil {
+				return fmt.Errorf("adding key: %s", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		level.Error(m.logger).Log("msg", "errors updating boltdb database with new info", "err", err)
+		return
+	}
+	level.Info(m.logger).Log("msg", "finished updating aircraft registration details")
 
 }
 
-func buildDetails(reader io.Reader) map[string]*model.Details {
+// CsvParser is built to parse the CSV file at github.com/wiedehopf/tar1090-db/raw/csv/aircraft.csv.gz
+// It's also built to do this while minimizing allocations and as such does some risky slice->string conversions
+// The custome CsvParser was built to work around the non-standard CSV format created by this python
+// spamwriter = csv.writer(csvfile,
+//                delimiter=';', escapechar='\\',
+//                quoting=csv.QUOTE_NONE, quotechar=None,
+//                lineterminator='\n')
+// Which is semicolon delimited, no header, non quoted and uses backslashes to escape
+// There currently aren't any lines in the file that use the escape char so I'm not 100% sure the code here handles that correctly.
+type CsvParser struct {
+	s             *bufio.Scanner
+	details       *model.Details
+	hex           string
+	hexSlice      []byte
+	regSlice      []byte
+	typeCodeSlice []byte
+	optCodeSlice  []byte
+	descSlice     []byte
+	manSlice      []byte
+	ownSlice      []byte
+}
+
+func NewCsvParser(r io.Reader) *CsvParser {
+	return &CsvParser{
+		s:             bufio.NewScanner(r),
+		details:       &model.Details{},
+		hexSlice:      make([]byte, 1000),
+		regSlice:      make([]byte, 1000),
+		typeCodeSlice: make([]byte, 1000),
+		optCodeSlice:  make([]byte, 1000),
+		descSlice:     make([]byte, 1000),
+		manSlice:      make([]byte, 1000),
+		ownSlice:      make([]byte, 1000),
+	}
+}
+
+func (j *CsvParser) Next() bool {
+	if !j.s.Scan() {
+		return false
+	}
 	lastPos := 0
 	part := 0
-	hex := ""
-	details := model.Details{}
-	nMap := map[string]*model.Details{}
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		for p, r := range line {
-			if r == ';' {
-				if p > 0 && line[p-1] == '\\' {
-					continue
-				}
-				var substr string
-				if p-lastPos > 1 {
-					if lastPos == 0 {
-						substr = line[lastPos:p]
-					} else {
-						substr = line[lastPos+1 : p]
-					}
-					switch part {
-					case 0:
-						hex = substr
-					case 1:
-						details.Registration = &substr
-					case 2:
-						details.TypeCode = &substr
-					case 3:
-						if len(substr) >= 1 {
-							if substr[0] == '1' {
-								details.Military = &trueVar
-							}
-						}
-						if len(substr) >= 2 {
-							if substr[1] == '1' {
-								details.Interesting = &trueVar
-							}
-						}
-						if len(substr) >= 3 {
-							if substr[2] == '1' {
-								details.PIA = &trueVar
-							}
-						}
-						if len(substr) >= 4 {
-							if substr[3] == '1' {
-								details.LADD = &trueVar
-							}
-						}
-					case 4:
-						details.Description = &substr
-					case 5:
-						details.Manufactured = &substr
-					case 6:
-						details.Owner = &substr
-					}
-				}
-				part++
-				lastPos = p
+	lb := j.s.Bytes()
+	//Reset details to be empty
+	j.details.Owner = nil
+	j.details.PIA = nil
+	j.details.Military = nil
+	j.details.LADD = nil
+	j.details.Interesting = nil
+	j.details.Manufactured = nil
+	j.details.Description = nil
+	j.details.TypeCode = nil
+	j.details.Registration = nil
+	for p, r := range lb {
+		if r == ';' {
+			if p > 0 && lb[p-1] == '\\' {
+				continue
 			}
+			var start, end int
+			if p-lastPos > 1 {
+				if lastPos == 0 {
+					start = lastPos
+					end = p
+				} else {
+					start = lastPos + 1
+					end = p
+				}
+				switch part {
+				case 0:
+					j.hexSlice = j.hexSlice[:0]
+					j.hexSlice = append(j.hexSlice, lb[start:end]...)
+					j.hex = *(*string)(unsafe.Pointer(&j.hexSlice))
+				case 1:
+					j.regSlice = j.regSlice[:0]
+					j.regSlice = append(j.regSlice, lb[start:end]...)
+					j.details.Registration = (*string)(unsafe.Pointer(&j.regSlice))
+				case 2:
+					j.typeCodeSlice = j.typeCodeSlice[:0]
+					j.typeCodeSlice = append(j.typeCodeSlice, lb[start:end]...)
+					j.details.TypeCode = (*string)(unsafe.Pointer(&j.typeCodeSlice))
+				case 3:
+					j.optCodeSlice = j.optCodeSlice[:0]
+					j.optCodeSlice = append(j.optCodeSlice, lb[start:end]...)
+					if len(j.optCodeSlice) >= 1 {
+						if j.optCodeSlice[0] == '1' {
+							j.details.Military = &trueVar
+						}
+					}
+					if len(j.optCodeSlice) >= 2 {
+						if j.optCodeSlice[1] == '1' {
+							j.details.Interesting = &trueVar
+						}
+					}
+					if len(j.optCodeSlice) >= 3 {
+						if j.optCodeSlice[2] == '1' {
+							j.details.PIA = &trueVar
+						}
+					}
+					if len(j.optCodeSlice) >= 4 {
+						if j.optCodeSlice[3] == '1' {
+							j.details.LADD = &trueVar
+						}
+					}
+				case 4:
+					j.descSlice = j.descSlice[:0]
+					j.descSlice = append(j.descSlice, lb[start:end]...)
+					j.details.Description = (*string)(unsafe.Pointer(&j.descSlice))
+				case 5:
+					j.manSlice = j.manSlice[:0]
+					j.manSlice = append(j.manSlice, lb[start:end]...)
+					j.details.Manufactured = (*string)(unsafe.Pointer(&j.manSlice))
+				case 6:
+					j.ownSlice = j.ownSlice[:0]
+					j.ownSlice = append(j.ownSlice, lb[start:end]...)
+					j.details.Owner = (*string)(unsafe.Pointer(&j.ownSlice))
+				}
+			}
+			part++
+			lastPos = p
+
 		}
-		lastPos = 0
-		part = 0
-		copyDetails := details
-		nMap[strings.TrimSpace(strings.ToLower(hex))] = &copyDetails
-		details = model.Details{}
 	}
-	return nMap
+	return true
+}
+
+// Details returns a pointer to the current details
+// NOTE everything about the returned object is UNSAFE it is intended that this object be serialized to a string immediately before calling Next()
+func (j *CsvParser) Details() (string, *model.Details) {
+	return strings.TrimSpace(strings.ToLower(j.hex)), j.details
 }

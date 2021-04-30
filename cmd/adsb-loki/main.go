@@ -65,6 +65,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed to init the registration manager: %v\n", err)
 		os.Exit(1)
 	}
+	m.Run()
 
 	al, err := adsbloki.NewADSBLoki(logger, &config.Config, m)
 	if err != nil {

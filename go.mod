@@ -10,6 +10,8 @@ require (
 	github.com/grafana/loki v1.6.2-0.20201026154740-6978ee5d7387
 	github.com/magefile/mage v1.11.0
 	github.com/prometheus/common v0.14.0
+	go.etcd.io/bbolt v1.3.5
+	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
 )
 
 // Override reference that causes an error from Go proxy - see https://github.com/golang/go/issues/33558

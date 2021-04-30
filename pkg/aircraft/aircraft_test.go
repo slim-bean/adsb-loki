@@ -1,11 +1,16 @@
 package aircraft
 
 import (
-	"reflect"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"adsb-loki/pkg/model"
+	"github.com/go-kit/kit/log"
 )
 
 var testFile = `38BB7B;F-WIZZ;ZZZZ;00;Issoire Aviation APM-50 Nala;;;
@@ -81,15 +86,50 @@ var expectedDetails = map[string]*model.Details{
 	},
 }
 
-func Test_buildDetails(t *testing.T) {
+func stringP(v string) *string {
+	return &v
+}
+
+func Test_JsonParser(t *testing.T) {
 	r := strings.NewReader(testFile)
-	m := buildDetails(r)
-	eq := reflect.DeepEqual(expectedDetails, m)
-	if !eq {
-		t.Fail()
+	p := NewCsvParser(r)
+	m := map[string][]byte{}
+	for p.Next() {
+		h, dp := p.Details()
+		dpBytes, err := json.Marshal(dp)
+		if err != nil {
+			panic(err)
+		}
+		m[h] = dpBytes
+	}
+	for k, v := range expectedDetails {
+		eBytes, err := json.Marshal(v)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(eBytes, m[k]) {
+			t.Fail()
+		}
 	}
 }
 
-func stringP(v string) *string {
-	return &v
+func Benchmark_loadRegistrationInfo(b *testing.B) {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	path, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	db := filepath.Join(path, "aircraft.db")
+	cfg := Config{
+		Directory:  path,
+		BoltDbFile: db,
+	}
+	m, err := NewAircraftManager(logger, cfg)
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < b.N; i++ {
+		fmt.Println("Running benchmark", i)
+		m.loadRegistrationInfo()
+	}
 }

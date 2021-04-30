@@ -7,9 +7,14 @@ services:
     restart: always
     network_mode: host
     command: -config.file=/etc/loki/loki-config.yaml
+    # must apply with --compatibility flag and have cgroups enabled
+    deploy:
+      resources:
+        limits:
+          memory: 500M
     volumes:
-      - "loki:/loki"
       - "/home/pi/loki-config.yaml:/etc/loki/loki-config.yaml"
+      - "/opt/external/loki-adsb:/loki"
 
   adsb-loki:
     image: slimbean/adsb-loki:latest
@@ -20,5 +25,4 @@ services:
       - "/home/pi/adsb-loki.yaml:/etc/adsb-loki/adsb-loki.yaml"
 
 volumes:
-  loki:
   adsb-loki:
