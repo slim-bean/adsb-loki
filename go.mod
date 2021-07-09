@@ -1,4 +1,4 @@
-module adsb-loki
+module github.com/slim-bean/adsb-loki
 
 go 1.16
 
