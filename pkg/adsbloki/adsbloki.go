@@ -5,9 +5,7 @@ import (
 	"github.com/grafana/loki/clients/pkg/promtail/api"
 	"github.com/grafana/loki/pkg/logproto"
 	"github.com/prometheus/client_golang/prometheus"
-	"io/ioutil"
-	"net/http"
-	"strings"
+	"github.com/slim-bean/adsb-loki/pkg/piaware"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -19,14 +17,13 @@ import (
 	"github.com/grafana/loki/pkg/util/flagext"
 
 	"github.com/slim-bean/adsb-loki/pkg/cfg"
-	ac_model "github.com/slim-bean/adsb-loki/pkg/model"
 )
 
 type aDSBLoki struct {
 	config   *cfg.Config
 	logger   log.Logger
 	client   client.Client
-	am       *aircraft.Manager
+	pi       *piaware.Piaware
 	shutdown chan struct{}
 	done     chan struct{}
 }
@@ -38,11 +35,13 @@ func NewADSBLoki(logger log.Logger, cfg *cfg.Config, am *aircraft.Manager) (*aDS
 		return nil, err
 	}
 
+	pa := piaware.New(am, cfg.ADSBURL)
+
 	adsb := &aDSBLoki{
 		config:   cfg,
 		logger:   log.With(logger, "component", "adsbloki"),
 		client:   c,
-		am:       am,
+		pi:       pa,
 		shutdown: make(chan struct{}),
 		done:     make(chan struct{}),
 	}
@@ -66,27 +65,23 @@ func (a *aDSBLoki) run() {
 			level.Info(a.logger).Log("msg", "run loop shutting down")
 			return
 		case <-t.C:
-			rpt, err := GetReport(a.config.ADSBURL)
+			rpt, err := a.pi.GetReport()
 			if err != nil {
-				level.Error(a.logger).Log("msg", "error getting aircraft info", "err", err)
+				level.Error(a.logger).Log("msg", "error getting report", "err", err)
 				continue
 			}
-			for _, aircraft := range rpt.Aircraft {
-				details := a.am.Lookup(strings.ToLower(aircraft.Hex))
-				if details != nil {
-					aircraft.Details = *details
-				}
-				bts, err := json.Marshal(aircraft)
+			for _, ac := range rpt.Aircraft {
+				bts, err := json.Marshal(ac)
 				if err != nil {
 					level.Error(a.logger).Log("msg", "error getting aircraft info", "err", err)
 					continue
 				}
 				lbls := model.LabelSet{
 					model.LabelName("job"): model.LabelValue("adsb"),
-					model.LabelName("hex"): model.LabelValue(aircraft.Hex),
+					model.LabelName("hex"): model.LabelValue(ac.Hex),
 				}
-				if aircraft.Registration != nil {
-					lbls[model.LabelName("registration")] = model.LabelValue(*aircraft.Registration)
+				if ac.Registration != nil {
+					lbls[model.LabelName("registration")] = model.LabelValue(*ac.Registration)
 				}
 				e := api.Entry{
 					Labels: lbls,
@@ -108,36 +103,4 @@ func (a *aDSBLoki) Stop() {
 	level.Info(a.logger).Log("msg", "closing clients")
 	a.client.Stop()
 	level.Info(a.logger).Log("msg", "clients close, shutdown complete")
-}
-
-func GetReport(url string) (*ac_model.Report, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	report := &ac_model.Report{}
-	err = json.Unmarshal(body, report)
-	if err != nil {
-		return nil, err
-	}
-
-	/*
-	 * Clean up the flight ID by removing leading and trailing spaces
-	 */
-	for i, a := range report.Aircraft {
-		if a.Flight != nil {
-			trimmed := strings.TrimSpace(*a.Flight)
-			report.Aircraft[i].Flight = &trimmed
-		}
-
-		//fmt.Println(reflect.TypeOf(a.alt_baro))
-	}
-
-	return report, nil
 }
