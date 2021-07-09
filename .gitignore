@@ -2,3 +2,5 @@
 cmd/adsb-loki/adsb-loki
 ReleasableAircraft.zip
 cmd/adsb-loki/local-config.yaml
+*.db
+*.gz

@@ -3,11 +3,11 @@ package cfg
 import (
 	"flag"
 
-	"adsb-loki/pkg/aircraft"
+	"github.com/slim-bean/adsb-loki/pkg/aircraft"
 
-	"github.com/grafana/loki/pkg/promtail/client"
+	"github.com/grafana/loki/clients/pkg/promtail/client"
 
-	"adsb-loki/pkg/registration"
+	"github.com/slim-bean/adsb-loki/pkg/registration"
 )
 
 type Config struct {

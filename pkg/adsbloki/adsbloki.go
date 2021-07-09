@@ -2,21 +2,24 @@ package adsbloki
 
 import (
 	"encoding/json"
+	"github.com/grafana/loki/clients/pkg/promtail/api"
+	"github.com/grafana/loki/pkg/logproto"
+	"github.com/prometheus/client_golang/prometheus"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
 
-	"adsb-loki/pkg/aircraft"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
+	"github.com/slim-bean/adsb-loki/pkg/aircraft"
 
-	"github.com/grafana/loki/pkg/promtail/client"
+	"github.com/grafana/loki/clients/pkg/promtail/client"
 	"github.com/grafana/loki/pkg/util/flagext"
 
-	"adsb-loki/pkg/cfg"
-	ac_model "adsb-loki/pkg/model"
+	"github.com/slim-bean/adsb-loki/pkg/cfg"
+	ac_model "github.com/slim-bean/adsb-loki/pkg/model"
 )
 
 type aDSBLoki struct {
@@ -29,7 +32,7 @@ type aDSBLoki struct {
 }
 
 func NewADSBLoki(logger log.Logger, cfg *cfg.Config, am *aircraft.Manager) (*aDSBLoki, error) {
-	c, err := client.NewMulti(logger, flagext.LabelSet{}, cfg.ClientConfigs...)
+	c, err := client.NewMulti(prometheus.DefaultRegisterer, logger, flagext.LabelSet{}, cfg.ClientConfigs...)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to create new Loki client(s)", "err", err)
 		return nil, err
@@ -85,10 +88,14 @@ func (a *aDSBLoki) run() {
 				if aircraft.Registration != nil {
 					lbls[model.LabelName("registration")] = model.LabelValue(*aircraft.Registration)
 				}
-				err = a.client.Handle(lbls, time.Unix(int64(rpt.Now), 0), string(bts))
-				if err != nil {
-					level.Error(a.logger).Log("msg", "failed to send to Loki", "err", err)
+				e := api.Entry{
+					Labels: lbls,
+					Entry: logproto.Entry{
+						Timestamp: time.Unix(int64(rpt.Now), 0),
+						Line:      string(bts),
+					},
 				}
+				a.client.Chan() <- e
 			}
 		}
 	}

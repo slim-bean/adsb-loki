@@ -68,9 +68,20 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 		})
 
-		i.Duration.WithLabelValues(r.Method, route, strconv.Itoa(respMetrics.Code), isWS).Observe(respMetrics.Duration.Seconds())
 		i.RequestBodySize.WithLabelValues(r.Method, route).Observe(float64(rBody.read))
 		i.ResponseBodySize.WithLabelValues(r.Method, route).Observe(float64(respMetrics.Written))
+
+		histogram := i.Duration.WithLabelValues(r.Method, route, strconv.Itoa(respMetrics.Code), isWS)
+		if traceID, ok := ExtractSampledTraceID(r.Context()); ok {
+			// Need to type-convert the Observer to an
+			// ExemplarObserver. This will always work for a
+			// HistogramVec.
+			histogram.(prometheus.ExemplarObserver).ObserveWithExemplar(
+				respMetrics.Duration.Seconds(), prometheus.Labels{"traceID": traceID},
+			)
+			return
+		}
+		histogram.Observe(respMetrics.Duration.Seconds())
 	})
 }
 
@@ -93,13 +104,25 @@ func (i Instrument) getRouteName(r *http.Request) string {
 
 func getRouteName(routeMatcher RouteMatcher, r *http.Request) string {
 	var routeMatch mux.RouteMatch
-	if routeMatcher != nil && routeMatcher.Match(r, &routeMatch) {
-		if name := routeMatch.Route.GetName(); name != "" {
-			return name
-		}
-		if tmpl, err := routeMatch.Route.GetPathTemplate(); err == nil {
-			return MakeLabelValue(tmpl)
-		}
+	if routeMatcher == nil || !routeMatcher.Match(r, &routeMatch) {
+		return ""
+	}
+
+	if routeMatch.MatchErr == mux.ErrNotFound {
+		return "notfound"
+	}
+
+	if routeMatch.Route == nil {
+		return ""
+	}
+
+	if name := routeMatch.Route.GetName(); name != "" {
+		return name
+	}
+
+	tmpl, err := routeMatch.Route.GetPathTemplate()
+	if err == nil {
+		return MakeLabelValue(tmpl)
 	}
 
 	return ""

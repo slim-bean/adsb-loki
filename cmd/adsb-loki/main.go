@@ -8,16 +8,16 @@ import (
 	"runtime"
 	"syscall"
 
-	"adsb-loki/pkg/aircraft"
 	"github.com/cortexproject/cortex/pkg/util/flagext"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/version"
+	"github.com/slim-bean/adsb-loki/pkg/aircraft"
 
-	lokiconfig "github.com/grafana/loki/pkg/cfg"
+	lokiconfig "github.com/grafana/loki/pkg/util/cfg"
 
-	"adsb-loki/pkg/adsbloki"
-	"adsb-loki/pkg/cfg"
+	"github.com/slim-bean/adsb-loki/pkg/adsbloki"
+	"github.com/slim-bean/adsb-loki/pkg/cfg"
 )
 
 type Config struct {

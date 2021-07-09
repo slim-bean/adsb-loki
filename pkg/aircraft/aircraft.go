@@ -16,10 +16,10 @@ import (
 	"time"
 	"unsafe"
 
-	"adsb-loki/pkg/model"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gocarina/gocsv"
+	"github.com/slim-bean/adsb-loki/pkg/model"
 	bolt "go.etcd.io/bbolt"
 )
 

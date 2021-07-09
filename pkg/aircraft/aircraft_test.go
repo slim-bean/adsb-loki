@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"adsb-loki/pkg/model"
 	"github.com/go-kit/kit/log"
+	"github.com/slim-bean/adsb-loki/pkg/model"
 )
 
 var testFile = `38BB7B;F-WIZZ;ZZZZ;00;Issoire Aviation APM-50 Nala;;;
