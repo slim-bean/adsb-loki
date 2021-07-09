@@ -13,3 +13,5 @@ require (
 	github.com/prometheus/common v0.23.0
 	go.etcd.io/bbolt v1.3.5
 )
+
+replace k8s.io/client-go => k8s.io/client-go v12.0.0+incompatible
