@@ -161,7 +161,7 @@ func (m *Manager) checkAndUpdateRegistrationFile() bool {
 		level.Error(m.logger).Log("msg", "failed to create temp registration file", "err", err)
 		return false
 	}
-	defer out.Close()
+
 	defer os.Remove(out.Name())
 
 	// Write the body to file
@@ -170,6 +170,8 @@ func (m *Manager) checkAndUpdateRegistrationFile() bool {
 		level.Error(m.logger).Log("msg", "failed to copy file to temp file", "err", err)
 		return false
 	}
+
+	out.Close()
 
 	err = os.Rename(path.Join(m.config.Directory, tempRegfile), path.Join(m.config.Directory, regfile))
 	if err != nil {
