@@ -168,6 +168,7 @@ func (m *Manager) checkAndUpdateRegistrationFile() bool {
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		level.Error(m.logger).Log("msg", "failed to copy file to temp file", "err", err)
+		out.Close()
 		return false
 	}
 
