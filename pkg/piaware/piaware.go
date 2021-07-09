@@ -27,10 +27,10 @@ func (p *Piaware) GetReport() (*model.Report, error) {
 		return nil, err
 	}
 
-	for _, ac := range rpt.Aircraft {
+	for i, ac := range rpt.Aircraft {
 		details := p.am.Lookup(strings.ToLower(ac.Hex))
 		if details != nil {
-			ac.Details = *details
+			rpt.Aircraft[i].Details = *details
 		}
 	}
 
